@@ -23,6 +23,7 @@ import com.iplanet.sso.SSOException;
 import com.sun.identity.idm.AMIdentity;
 import com.sun.identity.idm.IdRepoException;
 import com.sun.identity.idm.IdUtils;
+import com.sun.identity.sm.SMSException;
 import io.castle.client.Castle;
 import io.castle.client.internal.backend.CastleBackendProvider;
 import io.castle.client.model.*;
@@ -31,13 +32,12 @@ import org.forgerock.json.JsonValue;
 import org.forgerock.openam.annotations.sm.Attribute;
 import org.forgerock.openam.auth.node.api.*;
 import org.forgerock.openam.core.CoreWrapper;
-import org.forgerock.openam.sm.annotations.adapters.Password;
+import org.forgerock.openam.core.realms.Realm;
+import org.forgerock.openam.sm.AnnotatedServiceRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
 import static org.forgerock.openam.auth.nodes.castle.CastleHelper.CASTLE_RESPONSE;
@@ -45,23 +45,17 @@ import static org.forgerock.openam.auth.nodes.castle.CastleHelper.CASTLE_RESPONS
 public abstract class CastleRequestNode extends SingleOutcomeNode {
 
     protected final Logger logger = LoggerFactory.getLogger("amAuth");
+    protected final AnnotatedServiceRegistry serviceRegistry;
     protected final Config config;
     protected final Castle castle;
     protected final CoreWrapper coreWrapper;
     protected final Gson gson;
+    protected final Realm realm;
 
     /**
      * Configuration for the node.
      */
     public interface Config {
-
-        /**
-         * The Castle API Secret
-         */
-        @Attribute(order = 100)
-        @Password
-        char[] apiSecret();
-
         /**
          * Castle Event Type
          */
@@ -79,47 +73,11 @@ public abstract class CastleRequestNode extends SingleOutcomeNode {
         }
 
         /**
-         * Allow listed headers
-         */
-        @Attribute(order = 300)
-        List<String> allowListedHeaders();
-
-        /**
-         * Allow listed headers
-         */
-        @Attribute(order = 400)
-        default List<String> denyListedHeaders() { return Arrays.asList("cookie"); }
-
-        /**
-         * Timeout
-         */
-        @Attribute(order = 500)
-        default int timeout() {
-            return 500;
-        }
-
-        /**
          * Failover Strategy
          */
         @Attribute(order = 600)
         default AuthenticateAction failOverStrategy() {
             return AuthenticateAction.CHALLENGE;
-        }
-
-        /**
-         * Base URL
-         */
-        @Attribute(order = 700)
-        default String baseURL() {
-            return "https://api.castle.io/";
-        }
-
-        /**
-         * Log Http Requests
-         */
-        @Attribute(order = 800)
-        default boolean logHttpRequests() {
-            return false;
         }
 
         /**
@@ -129,7 +87,6 @@ public abstract class CastleRequestNode extends SingleOutcomeNode {
         default String mailAttribute() {
             return "mail";
         }
-
     }
 
 
@@ -140,26 +97,39 @@ public abstract class CastleRequestNode extends SingleOutcomeNode {
      * @param config The service config.
      * @throws NodeProcessException If the configuration was not valid.
      */
-    public CastleRequestNode(Config config, CoreWrapper coreWrapper)
+    public CastleRequestNode(Config config, CoreWrapper coreWrapper, AnnotatedServiceRegistry serviceRegistry, Realm realm)
             throws NodeProcessException {
         this.config = config;
         this.coreWrapper = coreWrapper;
         this.gson = new Gson();
+        this.serviceRegistry = serviceRegistry;
+        this.realm = realm;
         try {
-            castle = Castle.initialize(Castle.configurationBuilder().apiSecret(String.valueOf(config.apiSecret()))
-                                             .withAllowListHeaders(config.allowListedHeaders()).withDenyListHeaders(
-                            config.denyListedHeaders()).withTimeout(config.timeout()).withBackendProvider(
-                            CastleBackendProvider.OKHTTP).withAuthenticateFailoverStrategy(
-                            new AuthenticateFailoverStrategy(config.failOverStrategy())).withApiBaseUrl(
-                            config.baseURL()).withLogHttpRequests(config.logHttpRequests()).build());
-        } catch (CastleSdkConfigurationException e) {
-            throw new NodeProcessException("Cannot initialize the castle SDK");
+            CastleService castleService =
+                    serviceRegistry.getRealmSingleton(CastleService.class, realm).get();
+
+            castle = Castle.initialize(
+                    Castle.configurationBuilder()
+                            .apiSecret(String.valueOf(castleService.apiSecret()))
+                            .withAllowListHeaders(castleService.allowListedHeaders())
+                            .withDenyListHeaders(castleService.denyListedHeaders())
+                            .withTimeout(castleService.timeout())
+                            .withBackendProvider(CastleBackendProvider.OKHTTP)
+                            .withAuthenticateFailoverStrategy(new AuthenticateFailoverStrategy(config.failOverStrategy()))
+                            .withApiBaseUrl(castleService.baseURL())
+                            .withLogHttpRequests(castleService.logHttpRequests())
+                            .build()
+            );
+        } catch (CastleSdkConfigurationException | SMSException | SSOException e) {
+            throw new NodeProcessException("Cannot initialize the castle SDK due to: " + e.getMessage());
+        } catch(NoSuchElementException e) {
+            throw new NodeProcessException("Cannot initialize Castle Node because the Castle Service is not configured");
         }
     }
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
-        logger.debug("Starting Castle Risk Node");
+        logger.debug("Starting Castle Request Node");
 
         ImmutableMap<Object, Object> payload = buildPayload(context);
 
