@@ -15,7 +15,12 @@
 -->
 # Castle Authentication Nodes
 
-The Castle authentication nodes lets administrators integrate Castle risk tools into an AM Intelligent Access trees.
+Castle helps security teams more quickly discover, investigate and stop malicious activity. 
+
+This plugin gives you the ability to use Castle's Risk, Filter and Log APIs which provide risk signals 
+and give you the visibility needed to investigate security and fraud incidents. 
+
+See [castle.io](https://castle.io) for more information.
 
 ## Usage
 
@@ -24,33 +29,87 @@ To deploy these nodes, download the jar from the releases tab on github
 ../web-container/webapps/openam/WEB-INF/lib directory where AM is deployed. Restart the web container to pick up the
 new nodes. The nodes will then appear in the authentication trees components palette.
 
-### Castle Profiler Node
-This node tags the AM login page with the Castle JS to collect information about the event.
+### Before you begin
 
-#### Castle Profiler Node Configuration
-* **App ID** - Castle App ID.
-* **Profiler URI** - Castle client side CDN link.
+1. Create a [Castle account](https://dashboard.castle.io/signup/new)
+2. Once you're signed in, go the the [Dashboard Settings page](https://dashboard.castle.io/settings/general) to configure the Castle Service with the APP ID and API Secret. Please note your Castle environment - the "Sandbox" one is only suggested for non-production usage.
+3. Host our `castle-js` script. See our [NPM package](https://www.npmjs.com/package/@castleio/castle-js) for more details.
 
-### Castle Risk Node
-This node makes a request the Castle Risk API to retrieve a policy decision about the user session.
-
-#### Castle Risk Node Configuration
+### Castle Service
+This plugin provides a realm-specific Castle Service, where you specify common configuration for Castle nodes.
 
 * **API Secret** - A secret that will be used for authentication purposes.
-* **Event** - The Castle Event type.
+* **App ID** - Castle App ID.
+* **Profiler URI** - Castle Javascript link. We highly suggest you host it yourself.
 * **Allowlisted Headers** - A comma-separated list of strings representing HTTP headers that will get passed to the 
   context object with each call to the Castle API, unless they are denylisted. If not set or empty all headers will 
   be sent.
 * **Denylisted Headers** - A comma-separated list of strings representing HTTP headers that will never get passed to 
   the context object.
 * **Timeout** - An integer that represents the time in milliseconds after which a request fails.
-* **Authenticate Failover Strategy** - The strategy that will be used when a request to the /v1/authenticate 
-  endpoint of the Castle API fails.
 * **Base URL** - The base endpoint of the Castle API without any relative path.
-* **Log HTTP Requests** - Log HTTP Requests
+
+
+![CASTLE_SERVICE_1](./images/castle_service.png)
+
+### Quick Start
+
+This repository contains sample trees you can import using [AM Treetool](https://github.com/vscheuber/AM-treetool).
+
+You can batch-import them with this command:
+
+```
+./amtree.sh -h FORGEROCK_URL -u FORGEROCK_ADMIN -p FORGEROCK_ADMIN_PASSWORD -s -r examples/
+```
+
+Alternatively, you can recreate these tools yourself using the ForgeRock tree editor.
+
+Once you configured the Castle Service and you went through a tree that used one of Castle's API,
+you should be able to inspect the requests that were sent to Castle in the [Castle's Debugger](https://dashboard.cas.tl/debug-console/events).
+
+
+### Castle Profiler Node
+
+This node tags the AM login page with the Castle JS to collect information about the device being used.
+
+### Castle Risk Node
+
+This node makes a request to [Castle Risk API](https://castle.io/risk-api/) to assess user risk.
+
+You can also check our [API Reference](https://reference.castle.io/#operation/risk) for more details on the Risk API.
+
+#### Castle Risk Node Configuration
+
+* **Event** - The Castle Event type.
+* **Status** - The Castle Event status.
+* **Mail Attribute** - The ForgeRock email attribute.
+
+### Castle Filter Node
+
+This node makes a request to Castle's bot detection [Filter API](https://castle.io/filter-api/) to retrieve a policy decision about an action.
+
+You can also check our [API Reference](https://reference.castle.io/#operation/filter) for more details on the Filter API.
+
+#### Castle Filter Node Configuration
+
+* **Event** - The Castle Event type.
+* **Status** - The Castle Event status.
+* **Mail Attribute** - The ForgeRock email attribute.
+
+### Castle Log Node
+
+This node makes a request to Castle's Log API. This is an async API that provides visibility into the actions your users take.
+
+You can check our [API Reference](https://reference.castle.io/#tag/logging) for more details on the Log API.
+
+#### Castle Log Node Configuration
+
+* **Event** - The Castle Event type.
+* **Status** - The Castle Event status.
 * **Mail Attribute** - The ForgeRock email attribute.
 
 ### Castle Action Node
+
 This node analyzes the response from the Castle Risk Node and routes to the <code>Allow</code>,
 <code>Challenge</code> or <code>Deny</code> node outcomes.
 
@@ -82,7 +141,17 @@ session.
 * **API Secret** - A secret that will be used for authentication purposes.
 * **Base URL** - The base endpoint of the Castle API without any relative path.
 
-### Example Flow
+### Example Flows
 
+#### Login flows
+![CASTLE_LOGIN_1](./images/castle_login_flow.png)
+![CASTLE_LOGIN_2](./images/castle_login_flow2.png)
 
-![CASTLE_TREE](./images/castle_flow1.png)
+#### Registration flows
+![CASTLE_REGISTRATION_1](./images/castle_registration_flow.png)
+
+#### Password reset flows
+![CASTLE_PASSWORD_RESET](./images/castle_password_reset_flow.png)
+
+#### Password update flows
+![CASTLE_PASSWORD_UPDATE](./images/castle_password_update_flow.png)
